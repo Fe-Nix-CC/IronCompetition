@@ -16,9 +16,12 @@ import Data.Maybe (fromJust)
 
 data RequestDetails = RequestDetails
   { competitionID :: Text
-  , userAgent :: ByteString
+  , discordUser :: ByteString
   , verificationCode :: Text
   }
+
+userAgent :: RequestDetails -> ByteString
+userAgent details = "discord: " <> discordUser details <> "; script: IronCompetition"
 
 data Participant = Participant
   { username :: Text
@@ -40,11 +43,11 @@ promptBS p = do
 promptDetails :: IO RequestDetails
 promptDetails = do
   compid <- promptText "Enter the competition ID: "
-  useragent <- promptBS "Enter the user agent (your discord username): "
+  discord <- promptBS "Enter your discord username: "
   vercode <- promptText "Enter the WOM verification code: "
   pure $ RequestDetails
     { competitionID = compid
-    , userAgent = useragent
+    , discordUser = discord
     , verificationCode = vercode
     }
 
