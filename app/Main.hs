@@ -1,6 +1,7 @@
 module Main where
 
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -33,13 +34,13 @@ promptText :: String -> IO Text
 promptText p = do
   putStr p
   hFlush stdout
-  TIO.getLine
+  T.strip <$> TIO.getLine
 
 promptBS :: String -> IO ByteString
 promptBS p = do
   putStr p
   hFlush stdout
-  BS.getLine
+  BS.strip <$> BS.getLine
 
 promptDetails :: IO RequestDetails
 promptDetails = do
