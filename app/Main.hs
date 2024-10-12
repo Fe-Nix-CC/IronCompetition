@@ -13,6 +13,7 @@ import qualified Data.Aeson as A
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Maybe (fromJust)
+import Control.Monad.IO.Class (liftIO)
 
 data RequestDetails = RequestDetails
   { competitionID :: Text
@@ -44,7 +45,7 @@ promptDetails :: IO RequestDetails
 promptDetails = do
   compid <- promptText "Enter the competition ID: "
   discord <- promptBS "Enter your discord username: "
-  vercode <- promptText "Enter the WOM verification code: "
+  vercode <- promptText "Enter the competition verification code: "
   pure $ RequestDetails
     { competitionID = compid
     , discordUser = discord
@@ -83,8 +84,8 @@ getParticipant =
       }
     )
 
-justIrons :: Vector Participant -> Vector Participant
-justIrons = V.filter isIron
+nonIrons :: Vector Participant -> Vector Participant
+nonIrons = V.filter (not . isIron)
 
 isIron :: Participant -> Bool
 isIron p = case accountType p of
@@ -93,19 +94,26 @@ isIron p = case accountType p of
   "ironman" -> True
   _ -> False
 
-updateParticipants :: RequestDetails -> Vector Text -> Req ()
-updateParticipants details participants = () <$ H.req
-  H.PUT
-  (H.https "api.wiseoldman.net" /:
-    "v2" /:
-    "competitions" /:
-    competitionID details)
-  (H.ReqBodyJson $ A.object
-    [ "participants" .= participants
-    , "verificationCode" .= verificationCode details
-    ] )
-  H.ignoreResponse
-  (H.header "user-agent" $ userAgent details)
+removeParticipants :: RequestDetails -> Vector Text -> Req Text
+removeParticipants details participants
+  | V.null participants = pure "No one to remove"
+  | otherwise = do
+    responseValue <- H.responseBody <$> H.req
+      H.DELETE
+      (H.https "api.wiseoldman.net" /:
+        "v2" /:
+        "competitions" /:
+        competitionID details /:
+        "participants")
+      (H.ReqBodyJson $ A.object
+        [ "participants" .= participants
+        , "verificationCode" .= verificationCode details
+        ] )
+      H.jsonResponse
+      (H.header "user-agent" $ userAgent details)
+    pure $ fromJust $ flip parseMaybe responseValue $ A.withObject
+      "Response"
+      (.: "message")
 
 main :: IO ()
 main = do
@@ -115,7 +123,9 @@ main = do
   H.runReq H.defaultHttpConfig $ do
     -- Fetch the comp
     comp <- getCompetition details
-    -- Determine the new player list
-    let playerList = username <$> justIrons (getParticipation comp)
-    -- Post the player list
-    updateParticipants details playerList
+    -- Determine the players to remove
+    let playerList = username <$> nonIrons (getParticipation comp)
+    -- Delete the removed player list
+    result <- removeParticipants details playerList
+    -- Print the result for the user
+    liftIO $ TIO.putStrLn result
