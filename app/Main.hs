@@ -9,26 +9,70 @@ import System.IO (hFlush, stdout)
 import qualified Network.HTTP.Req as H
 import Network.HTTP.Req ((/:), Req)
 import Data.Aeson (Value, (.:), (.=))
-import Data.Aeson.Types (parseMaybe, Parser)
+import Data.Aeson.Types (parseMaybe)
 import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as AT
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Maybe (fromJust)
 import Control.Monad.IO.Class (liftIO)
+import Data.Functor.Identity (Identity(..))
+import Control.Applicative ((<**>))
+import qualified Options.Applicative as O
+import Data.Foldable (fold)
 
-data RequestDetails = RequestDetails
-  { competitionID :: Text
-  , discordUser :: ByteString
-  , verificationCode :: Text
+data RequestDetailsT f = RequestDetailsT
+  { competitionID :: f Text
+  , discordUser :: f ByteString
+  , verificationCode :: f Text
   }
 
+type RequestDetails = RequestDetailsT Identity
+
 userAgent :: RequestDetails -> ByteString
-userAgent details = "discord: " <> discordUser details <> "; script: IronCompetition"
+userAgent details = fold
+  [ "discord: "
+  , runIdentity $ discordUser details
+  , "; script: IronCompetition"
+  ]
 
 data Participant = Participant
   { username :: Text
   , accountType :: Text
   }
+
+-- Get command line arguments
+getArgs :: O.ParserInfo (RequestDetailsT Maybe)
+getArgs = O.info
+  (parser <**> O.helper)
+  $ fold
+    [ O.header "Iron Competition"
+    , O.progDesc $ fold
+      [ "Removes all non-ironman participants from a competition on "
+      , "Wise Old Man. All command line options are optional, though missing "
+      , "values will be prompted for when the program runs."
+      ]
+    ]
+  where
+  parser = RequestDetailsT <$> compIDParse <*> discordParse <*> vercodeParse
+  compIDParse = O.optional $ O.strOption $ fold
+    [ O.long "competition"
+    , O.short 'c'
+    , O.metavar "ID"
+    , O.help "Competition ID from Wise Old Man"
+    ]
+  discordParse = O.optional $ O.strOption $ fold
+    [ O.long "discord"
+    , O.short 'd'
+    , O.metavar "NAME"
+    , O.help "Discord username to be used in user agent"
+    ]
+  vercodeParse = O.optional $ O.strOption $ fold
+    [ O.long "verification"
+    , O.short 'v'
+    , O.metavar "CODE"
+    , O.help "Verification code for the competition"
+    ]
 
 promptText :: String -> IO Text
 promptText p = do
@@ -42,15 +86,21 @@ promptBS p = do
   hFlush stdout
   BS.strip <$> BS.getLine
 
-promptDetails :: IO RequestDetails
-promptDetails = do
-  compid <- promptText "Enter the competition ID: "
-  discord <- promptBS "Enter your discord username: "
-  vercode <- promptText "Enter the competition verification code: "
-  pure $ RequestDetails
-    { competitionID = compid
-    , discordUser = discord
-    , verificationCode = vercode
+promptDetails :: RequestDetailsT Maybe -> IO RequestDetails
+promptDetails argDeets = do
+  compid <- case competitionID argDeets of
+    Just c -> pure c
+    Nothing -> promptText "Enter the competition ID: "
+  discord <- case discordUser argDeets of
+    Just d -> pure d
+    Nothing -> promptBS "Enter your discord username: "
+  vercode <- case verificationCode argDeets of
+    Just v -> pure v
+    Nothing -> promptText "Enter the competition verification code: "
+  pure $ RequestDetailsT
+    { competitionID = Identity compid
+    , discordUser = Identity discord
+    , verificationCode = Identity vercode
     }
 
 getCompetition :: RequestDetails -> Req Value
@@ -59,7 +109,7 @@ getCompetition details = H.responseBody <$> H.req
   (H.https "api.wiseoldman.net" /:
     "v2" /:
     "competitions" /:
-    competitionID details)
+    runIdentity (competitionID details))
   H.NoReqBody
   H.jsonResponse
   (H.header "user-agent" $ userAgent details)
@@ -72,7 +122,7 @@ getParticipation = fromJust . parseMaybe parser where
     comp .: "participations" >>=
     A.withArray "participations" (traverse getParticipant)
 
-getParticipant :: Value -> Parser Participant
+getParticipant :: Value -> AT.Parser Participant
 getParticipant =
   A.withObject "Participation" $ \participation ->
   participation .: "player" >>=
@@ -104,11 +154,11 @@ removeParticipants details participants
       (H.https "api.wiseoldman.net" /:
         "v2" /:
         "competitions" /:
-        competitionID details /:
+        runIdentity (competitionID details) /:
         "participants")
       (H.ReqBodyJson $ A.object
         [ "participants" .= participants
-        , "verificationCode" .= verificationCode details
+        , "verificationCode" .= runIdentity (verificationCode details)
         ] )
       H.jsonResponse
       (H.header "user-agent" $ userAgent details)
@@ -118,9 +168,11 @@ removeParticipants details participants
 
 main :: IO ()
 main = do
-  -- Get all details needed
-  details <- promptDetails
-
+  -- Get command line arguments
+  args <- O.execParser getArgs
+  -- Get all remaining details needed
+  details <- promptDetails args
+  -- Do some API requests
   H.runReq H.defaultHttpConfig $ do
     -- Fetch the comp
     comp <- getCompetition details
