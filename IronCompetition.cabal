@@ -1,27 +1,27 @@
-cabal-version:      3.0
-name:               IronCompetition
-version:            0.1.0.0
-author:             olligobber
-maintainer:         sirolligobbervii@yahoo.com.au
-build-type:         Simple
+cabal-version: 3.0
+name: IronCompetition
+version: 0.1.1
+author: olligobber
+maintainer: sirolligobbervii@yahoo.com.au
+build-type: Simple
 
 common warnings
-    ghc-options: -Wall -Wno-tabs
+	ghc-options: -Wall -Wno-tabs
 
 executable IronCompetition
-    import:           warnings
-    main-is:          Main.hs
+	import: warnings
+	main-is: Main.hs
 
-    default-extensions: OverloadedStrings
+	default-extensions: OverloadedStrings
 
-    build-depends:
-        base >=4.17.2.0 && <5,
-        req ^>=3.13.4,
-        vector ^>=0.13.0.0,
-        aeson ^>=2.2.3.0,
-        bytestring ^>=0.12.1,
-        text ^>=2.1.1,
-        optparse-applicative ^>=0.18.1.0,
+	build-depends:
+		base >=4.17.2.0 && <5,
+		req ^>=3.13.4,
+		vector ^>=0.13.0.0,
+		aeson ^>=2.2.3.0,
+		bytestring ^>=0.12.1,
+		text ^>=2.1.1,
+		optparse-applicative ^>=0.18.1.0,
 
-    hs-source-dirs:   app
-    default-language: Haskell2010
+	hs-source-dirs: app
+	default-language: Haskell2010
